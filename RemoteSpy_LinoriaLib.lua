@@ -17,11 +17,47 @@ Perfect for reverse engineering games!
 
 ]]
 
--- Load LinoriaLib
-local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
-local Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
-local ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
-local SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
+-- Load LinoriaLib with error handling
+local Library, ThemeManager, SaveManager
+
+local function loadLinoria()
+    local success, err = pcall(function()
+        -- Try primary source
+        local repo = 'https://raw.githubusercontent.com/violin-suzutsuki/LinoriaLib/main/'
+        Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+        ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+        SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
+    end)
+    
+    if not success then
+        warn("Primary LinoriaLib source failed, trying alternative...")
+        
+        -- Try alternative source
+        pcall(function()
+            local repo = 'https://raw.githubusercontent.com/bloodball/LinoriaLib/main/'
+            Library = loadstring(game:HttpGet(repo .. 'Library.lua'))()
+            ThemeManager = loadstring(game:HttpGet(repo .. 'addons/ThemeManager.lua'))()
+            SaveManager = loadstring(game:HttpGet(repo .. 'addons/SaveManager.lua'))()
+        end)
+    end
+    
+    if not Library then
+        error("Failed to load LinoriaLib! Check your executor or internet connection.")
+    end
+    
+    return true
+end
+
+-- Load with protection
+local loadSuccess = pcall(loadLinoria)
+if not loadSuccess then
+    game:GetService("StarterGui"):SetCore("SendNotification", {
+        Title = "Error",
+        Text = "Failed to load UI library!",
+        Duration = 5
+    })
+    return
+end
 
 -- Services
 local Players = game:GetService("Players")
@@ -483,82 +519,95 @@ do
     })
 end
 
--- REMOTE SPY HOOK
-local oldNamecall
-oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
-    local method = getnamecallmethod()
-    local args = {...}
-    
-    if Toggles.EnableSpy and Toggles.EnableSpy.Value then
-        -- FireServer
-        if method == "FireServer" and self:IsA("RemoteEvent") and Toggles.LogFireServer.Value then
-            local remoteName = self.Name
-            local remotePath = self:GetFullName()
-            
-            -- Apply filters
-            local shouldLog = true
-            
-            if Options.FilterRemoteName.Value ~= '' then
-                if not string.match(string.lower(remoteName), string.lower(Options.FilterRemoteName.Value)) then
-                    shouldLog = false
-                end
-            end
-            
-            if Toggles.FilterDamage.Value then
-                local lowerName = string.lower(remoteName)
-                if not (string.match(lowerName, "damage") or 
-                        string.match(lowerName, "hit") or 
-                        string.match(lowerName, "kill") or
-                        string.match(lowerName, "hurt")) then
-                    shouldLog = false
-                end
-            end
-            
-            if Toggles.FilterWeapon.Value then
-                local lowerName = string.lower(remoteName)
-                if not (string.match(lowerName, "gun") or 
-                        string.match(lowerName, "weapon") or 
-                        string.match(lowerName, "shoot") or
-                        string.match(lowerName, "fire")) then
-                    shouldLog = false
-                end
-            end
-            
-            if shouldLog then
-                local formattedArgs = formatArgs(...)
-                local log = string.format("[FireServer] %s | Args: %s", remoteName, formattedArgs)
-                table.insert(RemoteLogs, log)
-                
-                -- Also log path for copying
-                print(string.format("Path: %s", remotePath))
-            end
-        end
+-- REMOTE SPY HOOK (with error protection)
+local hookSuccess = pcall(function()
+    local oldNamecall
+    oldNamecall = hookmetamethod(game, "__namecall", newcclosure(function(self, ...)
+        local method = getnamecallmethod()
+        local args = {...}
         
-        -- InvokeServer
-        if method == "InvokeServer" and self:IsA("RemoteFunction") and Toggles.LogInvokeServer.Value then
-            local remoteName = self.Name
-            local remotePath = self:GetFullName()
-            local formattedArgs = formatArgs(...)
-            local log = string.format("[InvokeServer] %s | Args: %s", remoteName, formattedArgs)
-            table.insert(RemoteLogs, log)
-            print(string.format("Path: %s", remotePath))
-        end
-    end
+        pcall(function()
+            if Toggles.EnableSpy and Toggles.EnableSpy.Value then
+                -- FireServer
+                if method == "FireServer" and self:IsA("RemoteEvent") and Toggles.LogFireServer.Value then
+                    local remoteName = self.Name
+                    local remotePath = self:GetFullName()
+                    
+                    -- Apply filters
+                    local shouldLog = true
+                    
+                    if Options.FilterRemoteName.Value ~= '' then
+                        if not string.match(string.lower(remoteName), string.lower(Options.FilterRemoteName.Value)) then
+                            shouldLog = false
+                        end
+                    end
+                    
+                    if Toggles.FilterDamage.Value then
+                        local lowerName = string.lower(remoteName)
+                        if not (string.match(lowerName, "damage") or 
+                                string.match(lowerName, "hit") or 
+                                string.match(lowerName, "kill") or
+                                string.match(lowerName, "hurt")) then
+                            shouldLog = false
+                        end
+                    end
+                    
+                    if Toggles.FilterWeapon.Value then
+                        local lowerName = string.lower(remoteName)
+                        if not (string.match(lowerName, "gun") or 
+                                string.match(lowerName, "weapon") or 
+                                string.match(lowerName, "shoot") or
+                                string.match(lowerName, "fire")) then
+                            shouldLog = false
+                        end
+                    end
+                    
+                    if shouldLog then
+                        local formattedArgs = formatArgs(...)
+                        local log = string.format("[FireServer] %s | Args: %s", remoteName, formattedArgs)
+                        table.insert(RemoteLogs, log)
+                        
+                        -- Also log path for copying
+                        print(string.format("Path: %s", remotePath))
+                    end
+                end
+                
+                -- InvokeServer
+                if method == "InvokeServer" and self:IsA("RemoteFunction") and Toggles.LogInvokeServer.Value then
+                    local remoteName = self.Name
+                    local remotePath = self:GetFullName()
+                    local formattedArgs = formatArgs(...)
+                    local log = string.format("[InvokeServer] %s | Args: %s", remoteName, formattedArgs)
+                    table.insert(RemoteLogs, log)
+                    print(string.format("Path: %s", remotePath))
+                end
+            end
+        end)
+        
+        return oldNamecall(self, ...)
+    end))
+end)
+
+if not hookSuccess then
+    warn("Failed to hook metamethods - Remote spy may not work!")
+    Library:Notify('Warning: Remote hook failed!', 5)
+end
+
+-- Theme Manager & Save Manager (with safety checks)
+if ThemeManager and SaveManager then
+    ThemeManager:SetLibrary(Library)
+    SaveManager:SetLibrary(Library)
     
-    return oldNamecall(self, ...)
-end))
-
--- Theme Manager & Save Manager
-ThemeManager:SetLibrary(Library)
-SaveManager:SetLibrary(Library)
-
-ThemeManager:SetFolder('RanZx999Spy')
-SaveManager:SetFolder('RanZx999Spy')
-
-SaveManager:BuildConfigSection(Tabs.Settings)
-ThemeManager:ApplyToTab(Tabs.Settings)
-
-SaveManager:LoadAutoloadConfig()
+    ThemeManager:SetFolder('RanZx999Spy')
+    SaveManager:SetFolder('RanZx999Spy')
+    
+    SaveManager:BuildConfigSection(Tabs.Settings)
+    ThemeManager:ApplyToTab(Tabs.Settings)
+    
+    pcall(function()
+        SaveManager:LoadAutoloadConfig()
+    end)
+end
 
 -- Success notification
 Library:Notify('Remote Spy Loaded!', 5)
